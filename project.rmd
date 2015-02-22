@@ -1,0 +1,67 @@
+---
+title: "Practical Machine Learning Prediction Assignment"
+author: "Anand Valmiki"
+date: "Saturday, February 21, 2015"
+output: html_document
+---
+
+### Housekeeping
+
+```{r setup_env, echo=FALSE, warning=FALSE, message=FALSE}
+WD <- c("C:/Users/20537710/My Documents/Coursera/Practical Machine Learning")
+setwd(WD)
+
+library(ggplot2)
+library(caret)
+library(randomForest)
+```
+```{r download, cache=TRUE}
+fileUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+pmlTraining <- data.frame(read.csv(fileUrl, na.strings = c("", "NA"), header = TRUE))
+```
+
+### Data Cleanup
+
+```{r misc-1}
+dim(pmlTraining)
+```
+We find and remove columns with a large number NA's
+
+```{r misc-2, echo=FALSE}
+sapply(pmlTraining, function(x) sum(is.na(x)))
+```
+
+Using the above R fiunction we see that there are lots of variables which have a large umber of NA's to be specific we see that many rows have exactly 9216 NA's.
+From reading the Forums I came to  know that the new_window column is yes, the corresponding row has summary statistics. This row of data is n We remove this row and columns which have all NA's.
+
+```{r cleanup, echo=FALSE}
+pmlTraining <- pmlTraining[! pmlTraining$new_window %in% c("yes") ,]
+# Drops all columns with NA's
+pmlTraining <- Filter(function(x)!all(is.na(x)), pmlTraining)
+
+pmlTraining$magnet_dumbbell_z <- as.integer(pmlTraining$magnet_dumbbell_z)
+pmlTraining$magnet_forearm_y <- as.integer(pmlTraining$magnet_forearm_y)
+pmlTraining$magnet_forearm_z  <- as.integer(pmlTraining$magnet_forearm_z)
+
+pmlTraining$raw_timestamp_part_2 <- NULL
+pmlTraining$raw_timestamp_part_1 <- NULL
+pmlTraining$cvtd_timestamp <- NULL
+pmlTraining$new_window <- NULL
+pmlTraining$num_window <- NULL
+pmlTraining$X <- NULL
+pmlTraining$user_name <- NULL
+```
+
+```{r train, echo=FALSE}
+# Creating Training and Test data
+inTrain <- createDataPartition(y = pmlTraining$classe, p = 0.75, list = FALSE)
+training <- pmlTraining[inTrain ,]
+testing <- pmlTraining[-inTrain ,]
+#
+rf <- randomForest(classe ~ ., data = training, ntree=100)
+```
+```{r results, echo=TRUE}
+testing$rf <- predict(rf, testing)
+table(testing$classe, testing$rf)
+confusionMatrix(training$classe,predict(rf,training))
+```
