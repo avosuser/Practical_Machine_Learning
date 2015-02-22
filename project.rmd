@@ -4,8 +4,11 @@ author: "Anand Valmiki"
 date: "Saturday, February 21, 2015"
 output: html_document
 ---
+#### Summary
+The pml-training data set consists of a number of columns of measurements from sensors strapped to the waist, arm, forearm and dumbell. Each row in the dataset identifies a test subject performing the *Dumbbell biceps curl* exercise in 5 different ways A thru E, with A being the corrrect way to do the exercise and B thru E being various types of common mistake made when doing this exercise. 
+The objective of this assignment is to predict the *classe* variable A thru E for each of the 20 rows in the test data set. I beleive the intention of the HAR project is to provide feedback to on how well the *Dumbbell biceps curl* exercise was performed by looking at measurement data. More information can be obtained at *http://groupware.les.inf.puc-rio.br/har*.
 
-### Housekeeping
+#### Housekeeping
 
 ```{r setup_env, echo=FALSE, warning=FALSE, message=FALSE}
 WD <- c("C:/Users/20537710/My Documents/Coursera/Practical Machine Learning")
@@ -14,35 +17,43 @@ setwd(WD)
 library(ggplot2)
 library(caret)
 library(randomForest)
+library(dplyr)
 ```
 ```{r download, cache=TRUE}
 fileUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 pmlTraining <- data.frame(read.csv(fileUrl, na.strings = c("", "NA"), header = TRUE))
+#load(file="pmlTraining.Rdata")
 ```
 
-### Data Cleanup
+#### Data Cleanup
 
-```{r misc-1}
+```{r misc-1, echo=TRUE, results='asis'}
 dim(pmlTraining)
 ```
-We find and remove columns with a large number NA's
 
-```{r misc-2, echo=FALSE}
+```{r misc-2, echo=TRUE, results='hide'}
 sapply(pmlTraining, function(x) sum(is.na(x)))
 ```
 
-Using the above R fiunction we see that there are lots of variables which have a large umber of NA's to be specific we see that many rows have exactly 9216 NA's.
-From reading the Forums I came to  know that the new_window column is yes, the corresponding row has summary statistics. This row of data is n We remove this row and columns which have all NA's.
+Using the above R function we see that there are lots of variables which have a large number of NA's, to be specific we see that many rows have exactly 9216 NA's.
+From reading the course forums I came to know that when the *new_window* column is yes, the corresponding row has summary statistics. This row of data is not useful for our prediction purposes. The below code deletes the row where the *new_window* column has a *yes*. Deleting this row creates a a large number of columns which have all NA's, I have removed these columns.
 
-```{r cleanup, echo=FALSE}
+```{r cleanup, echo=TRUE, results='hide'}
 pmlTraining <- pmlTraining[! pmlTraining$new_window %in% c("yes") ,]
 # Drops all columns with NA's
 pmlTraining <- Filter(function(x)!all(is.na(x)), pmlTraining)
+```
+The 20 row assignment submission training data set has the below three variables set as type *integer*, randomforest throws an error when the variables are of different types on the tarined and test datasets. Due to this I am converting these variables to integer on the pml-training data set.
 
+```{r cleanup1, echo=TRUE, results='hide'}
 pmlTraining$magnet_dumbbell_z <- as.integer(pmlTraining$magnet_dumbbell_z)
 pmlTraining$magnet_forearm_y <- as.integer(pmlTraining$magnet_forearm_y)
 pmlTraining$magnet_forearm_z  <- as.integer(pmlTraining$magnet_forearm_z)
+```
 
+As we are predicting how a subject performs the dumbbell exercise, some of the variables like timestamp's, names, row numbers are not relevant to the exercise *classe* prediction, I have removed these columns.
+
+```{r cleanup2, echo=TRUE, results='hide'}
 pmlTraining$raw_timestamp_part_2 <- NULL
 pmlTraining$raw_timestamp_part_1 <- NULL
 pmlTraining$cvtd_timestamp <- NULL
@@ -52,16 +63,130 @@ pmlTraining$X <- NULL
 pmlTraining$user_name <- NULL
 ```
 
-```{r train, echo=FALSE}
-# Creating Training and Test data
+The below code splits the primary training data into two subsets, the *training* set will be fed to randomforest and the *testing* set will be used to test predictions.
+
+```{r train, echo=TRUE, results='hide'}
 inTrain <- createDataPartition(y = pmlTraining$classe, p = 0.75, list = FALSE)
 training <- pmlTraining[inTrain ,]
 testing <- pmlTraining[-inTrain ,]
-#
-rf <- randomForest(classe ~ ., data = training, ntree=100)
 ```
-```{r results, echo=TRUE}
+
+From the below plot we see that the number of measurements for exercise *classe A* is twice that of the other classes. Dur to this it's very likely that the % of correct predictions for *classe A* will be much higher than for that of other classes.
+
+```{r plot1, echo = FALSE, fig.width=4, fig.height=3, warning=FALSE}
+tt1 <- count(training, vars=classe)
+ggplot(data=tt1, aes(x=vars, y=n)) +
+        geom_point(aes(color = vars)) +
+        xlab("Exercise 'classe'") + ylab("Number of measurements") +
+        ggtitle("PLOT 1")
+```
+
+Running randomforest with 100 trees.
+
+```{r train1, echo=TRUE, results='hide'}
+set.seed(779)
+dim(training)
+# rf <- randomForest(classe ~ ., data = training, ntree=100)
+rf <- randomForest(classe ~ ., data = training, mtry = 52, importance = TRUE, ntree=100)
+```
+
+#### Error Rate
+
+```{r train2, echo=TRUE, results='hide' }
+rf
+```
+
+```
+Call:
+ randomForest(formula = classe ~ ., data = training, mtry = 52,      importance = TRUE, ntree = 100) 
+               Type of random forest: classification
+                     Number of trees: 100
+No. of variables tried at each split: 52
+
+        OOB estimate of  error rate: 1.67%
+Confusion matrix:
+     A    B    C    D    E class.error
+A 4075   15    7    3    4 0.007066277
+B   45 2711   23    7    3 0.027967013
+C    8   22 2466   17    1 0.019093079
+D    5   15   33 2304    4 0.024142313
+E    2    8   10    9 2617 0.010959940
+```
+
+The above output from the model tells me that the OOB estimate of the error rate is ~ 1.67%. This is what I expect the prediction error rate to be when I run the prediction the testing data set and the 20 row assignment submission data set.
+
+The varImpPlot shown below tells us that roll_belt, pitch_belt, yaw_belt, pitch_forearm and some of the dumbell parameters has more of an effect on *classe* than the other variables.
+
+```{r plot2, echo = FALSE, fig.width=10, fig.height=8, warning=FALSE}
+varImpPlot(rf)
+```
+
+```{r results, echo=TRUE, results='hide'}
 testing$rf <- predict(rf, testing)
-table(testing$classe, testing$rf)
-confusionMatrix(training$classe,predict(rf,training))
+# table(testing$classe, testing$rf)
+confusionMatrix(testing$classe,predict(rf,testing))
 ```
+```
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    A    B    C    D    E
+         A 1362    2    2    1    0
+         B    7  908   10    3    1
+         C    3   14  817    4    0
+         D    1    2   18  765    0
+         E    0    3    5    6  868
+
+Overall Statistics
+                                          
+               Accuracy : 0.9829          
+                 95% CI : (0.9788, 0.9864)
+    No Information Rate : 0.2859          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.9784          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: A Class: B Class: C Class: D Class: E
+Sensitivity            0.9920   0.9774   0.9589   0.9820   0.9988
+Specificity            0.9985   0.9946   0.9947   0.9948   0.9964
+Pos Pred Value         0.9963   0.9774   0.9749   0.9733   0.9841
+Neg Pred Value         0.9968   0.9946   0.9912   0.9965   0.9997
+Prevalence             0.2859   0.1935   0.1774   0.1622   0.1810
+Detection Rate         0.2836   0.1891   0.1701   0.1593   0.1808
+Detection Prevalence   0.2847   0.1935   0.1745   0.1637   0.1837
+Balanced Accuracy      0.9953   0.9860   0.9768   0.9884   0.9976
+```
+The testing set has dim(testing) tells me that there are 4802 rows. If you add up all the diagonals on the confusion matrix it sums up to 4720, and the sum of all the numbers not on the diagonal i.e. the ones which randomforest got wrong adds up to 82. The error rate is 82*100/4802 ~ 1.70% which is close to 1.67% which is what randomforest came up with on the training set for OOB.
+
+If I do the math I get the below 
+
+```
+classe A prediction 99.63%      Error rate 0.37%
+classe B prediction 97.74%      Error rate 2.26%
+classe C prediction 97.49%      Error rate 2.51%
+classe D prediction 97.34%      Error rate 2.66%
+classe E prediction 98.30%      Error rate 1.70%
+```
+
+#### Lets run our prediction model on the 20 prediction submission test set data set.
+
+```{r download1, echo=TRUE}
+subURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+subTraining <- data.frame(read.csv(subURL, na.strings = c("", "NA"), header = TRUE))
+```
+
+subTraining has 20 rows and 160 columns.
+
+```{r dim1, echo=TRUE}
+dim(subTraining)
+```
+
+I run the predict function on the subTraining data set and the output is shown below. I submitted these results and got all 20 correct.
+
+```{r results1, echo=TRUE}
+predict(rf, subTraining)
+```
+
